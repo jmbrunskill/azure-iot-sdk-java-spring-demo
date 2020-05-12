@@ -41,24 +41,8 @@ public class IotEdge {
         @Override
         public IotHubMessageResult execute(Message msg, Object context) {
             this.counter += 1;
-
             String msgString = new String(msg.getBytes(), Message.DEFAULT_IOTHUB_MESSAGE_CHARSET);
             System.out.println(String.format("Received message %d: %s", this.counter, msgString));
-            if (context instanceof ModuleClient) {
-                try (JsonReader jsonReader = Json.createReader(new StringReader(msgString))) {
-                    final JsonObject msgObject = jsonReader.readObject();
-                    double temperature = msgObject.getJsonObject("machine").getJsonNumber("temperature").doubleValue();
-                    long threshold = IotEdge.tempThreshold.get();
-                    if (temperature >= threshold) {
-                        ModuleClient client = (ModuleClient) context;
-                        System.out.println(String.format("Temperature above threshold %d. Sending message: %s",
-                                threshold, msgString));
-                        client.sendEventAsync(msg, eventCallback, msg, IotEdge.OUTPUT_NAME);
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
             return IotHubMessageResult.COMPLETE;
         }
       
@@ -71,22 +55,6 @@ public class IotEdge {
         }
     }
 
-    protected static class OnProperty implements TwinPropertyCallBack {
-        @Override
-        public void TwinPropertyCallBack(Property property, Object context) {
-            if (!property.getIsReported()) {
-                if (property.getKey().equals(IotEdge.TEMP_THRESHOLD)) {
-                    try {
-                        long threshold = Math.round((double) property.getValue());
-                        IotEdge.tempThreshold.set(threshold);
-                    } catch (Exception e) {
-                        System.out.println("Faile to set TemperatureThread with exception");
-                        e.printStackTrace();
-                    }
-                }
-            }
-        }
-    }
     protected static class ConnectionStatusChangeCallback implements IotHubConnectionStatusChangeCallback {
 
         @Override
@@ -123,15 +91,6 @@ public class IotEdge {
             client.setMessageCallback(IotEdge.INPUT_NAME, msgCallback, client);
             client.registerConnectionStatusChangeCallback(new ConnectionStatusChangeCallback(), null);
             client.open();
-            client.startTwin(new DeviceTwinStatusCallBack(), null, new OnProperty(), null);
-            Map<Property, Pair<TwinPropertyCallBack, Object>> onDesiredPropertyChange = new HashMap<Property, Pair<TwinPropertyCallBack, Object>>() {
-                {
-                    put(new Property(IotEdge.TEMP_THRESHOLD, null),
-                            new Pair<TwinPropertyCallBack, Object>(new OnProperty(), null));
-                }
-            };
-            client.subscribeToTwinDesiredProperties(onDesiredPropertyChange);
-            client.getTwin();
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(1);
